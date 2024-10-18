@@ -7,6 +7,7 @@ from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from dotenv import load_dotenv
+from pydantic import BaseModel, ValidationError
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 load_dotenv()
@@ -43,25 +44,27 @@ GENERATION_PARAMS = {
 }
 
 
-def validate_input(input_text: str) -> bool:
-    """Validates user input."""
-    if not input_text:
-        logging.warning('User input is empty.')
-        return False
-    if len(input_text) > 500:
-        logging.warning('User input exceeds 500 characters.')
-        return False
-    return True
+class UserInput(BaseModel):
+    text: str
+
+    @classmethod
+    def validate(cls, input_text: str) -> bool:
+        """Validates user input."""
+        if not input_text:
+            logging.warning('User input is empty.')
+            return False
+        if len(input_text) > 500:
+            logging.warning('User input exceeds 500 characters.')
+            return False
+        return True
 
 
 def get_main_keyboard() -> InlineKeyboardMarkup:
     """Creates the main keyboard for the bot."""
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(text='Generate Text',
-                                     callback_data='generate_text'),
-            ]
+            [InlineKeyboardButton(text='Generate Text',
+                                  callback_data='generate_text'),]
         ]
     )
     return keyboard
@@ -90,12 +93,16 @@ async def handle_user_input(msg: types.Message) -> None:
     input_text: str = msg.text.strip().replace('\n', ' ').replace('\r', ' ')
     logging.info(f'Received user input: {input_text}')
 
-    if not validate_input(input_text):
-        return
-
     try:
+        # Использование Pydantic для валидации
+        user_input = UserInput(text=input_text)
+        if not UserInput.validate(input_text):
+            await msg.answer('Invalid input. Please ensure your text is not '
+                             'empty and does not exceed 500 characters.')
+            return
+
         input_ids = tokenizer.encode(
-            input_text,
+            user_input.text,
             add_special_tokens=True,
             max_length=512,
             truncation=True,
@@ -110,6 +117,9 @@ async def handle_user_input(msg: types.Message) -> None:
 
         await msg.answer(f'Generated text: {generated_text}')
 
+    except ValidationError as e:
+        logging.error(f'Validation error: {e}', exc_info=True)
+        await msg.answer('An unexpected error occurred. Please try again.')
     except Exception as e:
         logging.error(f'Error occurred during text generation: {e}',
                       exc_info=True)
