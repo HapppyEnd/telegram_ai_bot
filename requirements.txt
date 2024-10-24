@@ -1,0 +1,6 @@
+aiogram==3.13.1
+torch==2.4.1
+transformers==4.45.2
+python-dotenv==1.0.1
+pydantic==2.9.2
+flymyai==1.0.21
